@@ -2,9 +2,13 @@ import pandas as pd
 import random
 import string
 from datetime import datetime
-from pandas_msgpack import to_msgpack, read_msgpack
+import os
+from matplotlib import pyplot as plt
 
-types = ['int', 'float', 'boolean', 'string']
+#import datatable as dt
+#from mbf_pandas_msgpack import to_msgpack, read_msgpack
+
+types = ['int', 'float', 'string', 'boolean']
 
 def int_column(length) :
 
@@ -44,61 +48,89 @@ def column(column_type, length) :
 
 
 
-ds = pd.DataFrame()
-columns_num = random.randint(0, 100)
-rows_num = random.randint(0, 100)
-for i in range(columns_num) :
-    type = random.randint(0, 3)
-    ds['col' + str(i) + "_" + types[type]] = column(type, rows_num)
+def main() :
+    #columns_num = random.randint(1, 100)
+    #rows_num = random.randint(1, 100)
+    #dim = columns_num * rows_num
+
+    ds = pd.DataFrame()
+    columns_num = 256
+    rows_num = 256
+
+    for i in range(columns_num) :
+        type = random.randint(0, 1)
+        ds['col' + str(i) + "_" + types[type]] = column(type, rows_num)
+        ds['col' + str(i) + "_" + types[type]] = ds['col' + str(i) + "_" + types[type]].astype(types[type])
+
+    start_csv = datetime.now()
+    ds.to_csv('results/dataset.csv')
+    start_feather = datetime.now()
+    ds.reset_index(drop=True).to_feather('results/dataset.feather')
+    start_hdf = datetime.now()
+    ds.to_hdf('results/dataset.h5', key='df')
+    start_msgpack = datetime.now()
+    #to_msgpack('results/dataset.msg', ds)
+    start_parquet = datetime.now()
+    ds.to_parquet('results/dataset.gzip', compression='gzip')
+    start_pickle = datetime.now()
+    ds.to_pickle('results/dataset.pkl')
+    start_jay = datetime.now()
+    #ds_dt = dt.Da
+    #ds.to_jay("results/dataset.jay")
+    end_time = datetime.now()
 
 
+    result = pd.DataFrame()
+    result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
+    result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                           (end_time - start_jay).microseconds]
+
+    start_csv = datetime.now()
+    ds = pd.read_csv('results/dataset.csv')
+    start_feather = datetime.now()
+    ds = pd.read_feather('results/dataset.feather')
+    start_hdf = datetime.now()
+    ds = pd.read_hdf('results/dataset.h5', key='df')
+    start_msgpack = datetime.now()
+    #read_msgpack('results/dataset.msg', ds)
+    start_parquet = datetime.now()
+    ds = pd.read_parquet('results/dataset.gzip')
+    start_pickle = datetime.now()
+    ds = pd.read_pickle('results/dataset.pkl')
+    start_jay = datetime.now()
+    #ds = pd.read_jay("results/dataset.jay")
+    end_time = datetime.now()
+
+    result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                           (end_time - start_jay).microseconds]
+
+    result['size'] = [os.stat('results/dataset.csv').st_size, os.stat('results/dataset.feather').st_size,
+                      os.stat('results/dataset.h5').st_size, 0, os.stat('results/dataset.gzip').st_size,
+                      os.stat('results/dataset.pkl').st_size, 0]
+
+    return result
 
 
-start_csv = datetime.now()
-ds.to_csv('dataset.csv')
-start_feather = datetime.now()
-ds.to_feather('dataset.feather')
-start_hdf = datetime.now()
-ds.to_hdf('dataset.h5', key='df')
-start_msgpack = datetime.now()
-to_msgpack('dataset.msg', ds)
-start_parquet = datetime.now()
-ds.to_parquet('df.parquet.gzip', 'gzip')
-start_pickle = datetime.now()
-ds.to_pickle('dataset.pkl')
-start_jay = datetime.now()
-ds.to_jay("dataset.jay")
-end_time = datetime.now()
+if __name__ == '__main__' :
+    result = pd.DataFrame(columns=['file', 'save_time', 'load_time', 'size'])
+    for i in range(100) :
+        result = pd.concat([result, main()])
 
+    print(result.groupby('file', as_index=False).mean())
+    #result.groupby('file', as_index=False).mean().plot.bar(x='file', y='save_time')
 
-result = pd.DataFrame()
-result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
-result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                       (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                       (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                       (end_time - start_jay).microseconds]
-
-
-
-start_csv = datetime.now()
-ds = pd.read_csv('dataset.csv')
-start_feather = datetime.now()
-ds = pd.read_feather('dataset.feather')
-start_hdf = datetime.now()
-ds = pd.read_hdf('dataset.h5', key='df')
-start_msgpack = datetime.now()
-read_msgpack('dataset.msg', ds)
-start_parquet = datetime.now()
-ds = pd.read_parquet('df.parquet.gzip', 'gzip')
-start_pickle = datetime.now()
-ds = pd.read_pickle('dataset.pkl')
-start_jay = datetime.now()
-ds = pd.read_jay("dataset.jay")
-end_time = datetime.now()
-
-result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                       (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                       (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                       (end_time - start_jay).microseconds]
-
-print(result)
+    fig = plt.figure(figsize=(20,10))
+    plt.subplot(1, 3, 1)
+    plt.bar(result['file'].values, result['save_time'].values)
+    plt.title('saving')
+    plt.subplot(1, 3, 2)
+    plt.bar(result['file'].values, result['load_time'].values)
+    plt.title('loading')
+    plt.subplot(1, 3, 3)
+    plt.bar(result['file'].values, result['size'].values)
+    plt.title('size')
+    plt.savefig('results/res1.png')
