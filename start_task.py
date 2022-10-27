@@ -19,6 +19,7 @@ import h5py
 import warnings
 import datatable as dt
 import msgpack
+from sklearn import preprocessing
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 types = ['int', 'float', 'string', 'boolean']
@@ -61,15 +62,16 @@ def column(column_type, length) :
 
 def write_hdf(filename, ds) :
     ds = pd.concat([pd.DataFrame(ds.columns), ds], axis=1)
-    new_ds = pd.DataFrame([ds[i].astype('string') for i in ds.columns]).T.T
+    new_ds = pd.DataFrame([ds[i].astype('string') for i in ds.columns])
     with h5py.File(filename, 'w') as f:
         f.create_dataset('dataset', data=new_ds.values)
 
 def read_hdf(filename) :
-    with h5py.File(filename, "r") as f:
+  with h5py.File(filename, "r") as f:
         a_group_key = list(f.keys())[0]
         readed_ds = h5py.Dataset.asstr(f[a_group_key])
         ds = pd.DataFrame(list(readed_ds[1:]))
+        #ds = ds.T
         ds.columns = list(readed_ds[0])
         return ds
 
@@ -77,6 +79,16 @@ def write_jay(filename, ds) :
   ddt = dt.Frame([i.astype(str) for i in ds.values])
   ddt.names = list(ds.columns)
   ddt.to_jay('results/dataset.jay', method='auto')
+
+def read_jay(filename) :
+  ddt = dt.fread(filename)
+  ds = ddt.to_pandas()
+  col = ds.columns
+  ind = ds.index
+  ds = ds.T
+  ds.columns = col
+  ds.index = ind
+  return ds
 
 def write_msgpack(filename, ds) :
   with open(filename, "wb") as outfile:
@@ -99,7 +111,7 @@ def main() :
     rows_num = 256
 
     for i in range(columns_num) :
-        type = random.randint(0, 2)
+        type = random.randint(0, 3)
         ds = pd.concat([ds, pd.DataFrame(column(type, rows_num), columns=['col' + str(i) + "_" + types[type]])], axis=1)
         ds.iloc[:, -1] = ds.iloc[:, -1].astype(types[type])
 
@@ -140,7 +152,7 @@ def main() :
     start_pickle = datetime.now()
     ds = pd.read_pickle('results/dataset.pkl')
     start_jay = datetime.now()
-    ds = dt.fread('results/dataset.jay')
+    ds = read_jay('results/dataset.jay')
     end_time = datetime.now()
 
     result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
@@ -154,20 +166,32 @@ def main() :
 
     return result
 
+
+
 result = pd.DataFrame(columns=['file', 'save_time', 'load_time', 'size'])
 for i in range(100) :
         result = pd.concat([result, main()])
 
-print(result.groupby('file', as_index=False).mean())
+res = result.groupby('file', as_index=False).mean()
+print(res)
 
-fig = plt.figure(figsize=(20,10))
-plt.subplot(1, 3, 1)
+res['save_time'] = preprocessing.normalize(res['save_time'].values.reshape(1, -1))[0]
+res['load_time'] = preprocessing.normalize(res['load_time'].values.reshape(1, -1))[0]
+res['size'] = preprocessing.normalize(res['size'].values.reshape(1, -1))[0]
+
+res['sum'] = res['save_time'] + res['load_time'] + res['size']
+
+fig = plt.figure(figsize=(24,10))
+plt.subplot(1, 4, 1)
 plt.bar(result['file'].values, result['save_time'].values)
-plt.title('saving')
-plt.subplot(1, 3, 2)
+plt.title('saving, microseconds')
+plt.subplot(1, 4, 2)
 plt.bar(result['file'].values, result['load_time'].values)
-plt.title('loading')
-plt.subplot(1, 3, 3)
+plt.title('loading, microseconds')
+plt.subplot(1, 4, 3)
 plt.bar(result['file'].values, result['size'].values)
-plt.title('size')
+plt.title('size, bytes')
+plt.subplot(1, 4, 4)
+plt.bar(res.sort_values('sum')['file'].values, res.sort_values('sum')['sum'].values)
+plt.title('final rank')
 plt.savefig('results/res1.png')
