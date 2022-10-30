@@ -71,9 +71,9 @@ def read_hdf(filename) :
         a_group_key = list(f.keys())[0]
         readed_ds = h5py.Dataset.asstr(f[a_group_key])
         ds = pd.DataFrame(list(readed_ds[1:]))
-        #ds = ds.T
+        ds = ds.T
         ds.columns = list(readed_ds[0])
-        return ds
+        return to_correct_types(ds)
 
 def write_jay(filename, ds) :
   ddt = dt.Frame([i.astype(str) for i in ds.values])
@@ -88,7 +88,7 @@ def read_jay(filename) :
   ds = ds.T
   ds.columns = col
   ds.index = ind
-  return ds
+  return to_correct_types(ds)
 
 def write_msgpack(filename, ds) :
   with open(filename, "wb") as outfile:
@@ -100,6 +100,20 @@ def read_msgpack(filename) :
     byte_data = data_file.read()
     data_loaded = msgpack.unpackb(byte_data, strict_map_key=False)
     return pd.DataFrame(data_loaded)
+
+def to_correct_types(ds) :
+  for i in range(len(ds.columns)) :
+    try :
+      ds[ds.columns[i]] = ds[ds.columns[i]].astype('boolean')
+    except :
+      try :
+        ds[ds.columns[i]] = ds[ds.columns[i]].astype('int')
+      except :
+        try :
+          ds[ds.columns[i]] = ds[ds.columns[i]].astype('float64')
+        except :
+          ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
+  return ds
 
 def main() :
     #columns_num = random.randint(1, 100)
@@ -166,8 +180,6 @@ def main() :
 
     return result
 
-
-
 result = pd.DataFrame(columns=['file', 'save_time', 'load_time', 'size'])
 for i in range(100) :
         result = pd.concat([result, main()])
@@ -181,17 +193,39 @@ res['size'] = preprocessing.normalize(res['size'].values.reshape(1, -1))[0]
 
 res['sum'] = res['save_time'] + res['load_time'] + res['size']
 
-fig = plt.figure(figsize=(24,10))
+fig = plt.figure(figsize=(24,11))
 plt.subplot(1, 4, 1)
-plt.bar(result['file'].values, result['save_time'].values)
-plt.title('saving, microseconds')
+plt.bar(res['file'].values, res['save_time'].values)
+plt.title('Saving')
+plt.xlabel("Files")
+plt.ylabel("Scores")
 plt.subplot(1, 4, 2)
-plt.bar(result['file'].values, result['load_time'].values)
-plt.title('loading, microseconds')
+plt.bar(res['file'].values, res['load_time'].values)
+plt.title('Loading')
+plt.xlabel("Files")
+plt.ylabel("Scores")
 plt.subplot(1, 4, 3)
-plt.bar(result['file'].values, result['size'].values)
-plt.title('size, bytes')
+plt.bar(res['file'].values, res['size'].values)
+plt.title('Size')
+plt.xlabel("Files")
+plt.ylabel("Scores")
 plt.subplot(1, 4, 4)
 plt.bar(res.sort_values('sum')['file'].values, res.sort_values('sum')['sum'].values)
 plt.title('final rank')
+plt.xlabel("Files")
+plt.ylabel("Scores")
 plt.savefig('results/res1.png')
+
+res = res.sort_values(by='sum')
+fig = plt.figure(figsize=(10,7))
+x = np.arange(7)
+width = 0.2
+plt.bar(x-0.2, res['save_time'].values, width, color='cyan')
+plt.bar(x, res['load_time'].values, width, color='orange')
+plt.bar(x+0.2, res['size'].values, width, color='green')
+plt.xticks(x, res['file'].values)
+plt.xlabel("Files")
+plt.ylabel("Scores")
+plt.title('Results sorted by final rank')
+plt.legend(["Saving", "Loading", "Size"])
+plt.savefig('results/res2.png')
