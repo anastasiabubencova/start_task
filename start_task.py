@@ -9,7 +9,10 @@ Original file is located at
 
 pip install datatable
 
+pip install memory_profiler
+
 import pandas as pd
+import numpy as np
 import random
 import string
 from datetime import datetime
@@ -19,6 +22,7 @@ import h5py
 import warnings
 import datatable as dt
 import msgpack
+import memory_profiler
 from sklearn import preprocessing
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -115,6 +119,94 @@ def to_correct_types(ds) :
           ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
   return ds
 
+def saving(ds) :
+    before_csv = memory_profiler.memory_usage()[0]
+    start_csv = datetime.now()
+    ds.to_csv('results/dataset.csv', index=False)
+
+    before_feather = memory_profiler.memory_usage()[0]
+    start_feather = datetime.now()
+    ds.reset_index(drop=True).to_feather('results/dataset.feather')
+
+    before_hdf = memory_profiler.memory_usage()[0]
+    start_hdf = datetime.now()
+    write_hdf('results/dataset.hdf5', ds)
+
+    before_msgpack = memory_profiler.memory_usage()[0]
+    start_msgpack = datetime.now()
+    write_msgpack('results/dataset.msg', ds)
+
+    before_parquet = memory_profiler.memory_usage()[0]
+    start_parquet = datetime.now()
+    ds.to_parquet('results/dataset.gzip', compression='gzip')
+
+    before_pickle = memory_profiler.memory_usage()[0]
+    start_pickle = datetime.now()
+    ds.to_pickle('results/dataset.pkl')
+
+    before_jay = memory_profiler.memory_usage()[0]
+    start_jay = datetime.now()
+    write_jay('results/dataset.jay', ds)
+
+    after = memory_profiler.memory_usage()[0]
+    end_time = datetime.now()
+
+
+    result = pd.DataFrame()
+    result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
+    result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                           (end_time - start_jay).microseconds]
+    result['save_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
+                             abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
+                             abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
+                             abs(after - before_jay)]
+    return result
+
+def loading(ds, result) :
+    before_csv = memory_profiler.memory_usage()[0]
+    start_csv = datetime.now()
+    ds = pd.read_csv('results/dataset.csv')
+
+    before_feather = memory_profiler.memory_usage()[0]
+    start_feather = datetime.now()
+    ds = pd.read_feather('results/dataset.feather')
+
+    before_hdf = memory_profiler.memory_usage()[0]
+    start_hdf = datetime.now()
+    ds = read_hdf('results/dataset.hdf5')
+
+    before_msgpack = memory_profiler.memory_usage()[0]
+    start_msgpack = datetime.now()
+    ds = read_msgpack('results/dataset.msg')
+
+    before_parquet = memory_profiler.memory_usage()[0]
+    start_parquet = datetime.now()
+    ds = pd.read_parquet('results/dataset.gzip')
+
+    before_pickle = memory_profiler.memory_usage()[0]
+    start_pickle = datetime.now()
+    ds = pd.read_pickle('results/dataset.pkl')
+
+    before_jay = memory_profiler.memory_usage()[0]
+    start_jay = datetime.now()
+    ds = read_jay('results/dataset.jay')
+
+    after = memory_profiler.memory_usage()[0]
+    end_time = datetime.now()
+
+    result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                           (end_time - start_jay).microseconds]
+
+    result['load_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
+                             abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
+                             abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
+                             abs(after - before_jay)]
+    return result
+
 def main() :
     #columns_num = random.randint(1, 100)
     #rows_num = random.randint(1, 100)
@@ -129,103 +221,66 @@ def main() :
         ds = pd.concat([ds, pd.DataFrame(column(type, rows_num), columns=['col' + str(i) + "_" + types[type]])], axis=1)
         ds.iloc[:, -1] = ds.iloc[:, -1].astype(types[type])
 
-    start_csv = datetime.now()
-    ds.to_csv('results/dataset.csv', index=False)
-    start_feather = datetime.now()
-    ds.reset_index(drop=True).to_feather('results/dataset.feather')
-    start_hdf = datetime.now()
-    write_hdf('results/dataset.hdf5', ds)
-    start_msgpack = datetime.now()
-    write_msgpack('results/dataset.msg', ds)
-    start_parquet = datetime.now()
-    ds.to_parquet('results/dataset.gzip', compression='gzip')
-    start_pickle = datetime.now()
-    ds.to_pickle('results/dataset.pkl')
-    start_jay = datetime.now()
-    write_jay('results/dataset.jay', ds)
-    end_time = datetime.now()
+    result = saving(ds)
 
-
-    result = pd.DataFrame()
-    result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
-    result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                           (end_time - start_jay).microseconds]
-
-    start_csv = datetime.now()
-    ds = pd.read_csv('results/dataset.csv')
-    start_feather = datetime.now()
-    ds = pd.read_feather('results/dataset.feather')
-    start_hdf = datetime.now()
-    ds = read_hdf('results/dataset.hdf5')
-    start_msgpack = datetime.now()
-    ds = read_msgpack('results/dataset.msg')
-    start_parquet = datetime.now()
-    ds = pd.read_parquet('results/dataset.gzip')
-    start_pickle = datetime.now()
-    ds = pd.read_pickle('results/dataset.pkl')
-    start_jay = datetime.now()
-    ds = read_jay('results/dataset.jay')
-    end_time = datetime.now()
-
-    result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                           (end_time - start_jay).microseconds]
 
     result['size'] = [os.stat('results/dataset.csv').st_size, os.stat('results/dataset.feather').st_size,
                       os.stat('results/dataset.hdf5').st_size, os.stat('results/dataset.msg').st_size,
                       os.stat('results/dataset.gzip').st_size, os.stat('results/dataset.pkl').st_size, os.stat('results/dataset.jay').st_size]
+    
 
+    result = loading(ds, result)
+    
     return result
 
-result = pd.DataFrame(columns=['file', 'save_time', 'load_time', 'size'])
+result = pd.DataFrame(columns=['file', 'save_time', 'save_memory', 'load_time', 'load_memory', 'size'])
 for i in range(100) :
         result = pd.concat([result, main()])
 
-res = result.groupby('file', as_index=False).mean()
+res = pd.concat([result[['file', 'save_time', 'load_time', 'size']].groupby('file', as_index=False).mean(), result[['file', 'save_memory', 'load_memory']].groupby('file', as_index=False).mean()], axis=1)
+files = res['file']
+res = res.drop(res.columns[0], axis=1)
+
+for i in range(len(res.columns)) :
+  try:
+    res[res.columns[i]] = preprocessing.normalize(res[res.columns[i]].values.reshape(1, -1))[0]
+  except :
+    's' 
+
+res['sum'] = res['save_time'] + res['load_time'] + res['size'] + res['save_memory'] + res['load_memory']
+res['file'] = files.iloc[:,0]
+res = res.sort_values(by='sum')
 print(res)
 
-res['save_time'] = preprocessing.normalize(res['save_time'].values.reshape(1, -1))[0]
-res['load_time'] = preprocessing.normalize(res['load_time'].values.reshape(1, -1))[0]
-res['size'] = preprocessing.normalize(res['size'].values.reshape(1, -1))[0]
-
-res['sum'] = res['save_time'] + res['load_time'] + res['size']
-
 fig = plt.figure(figsize=(24,11))
-plt.subplot(1, 4, 1)
-plt.bar(res['file'].values, res['save_time'].values)
-plt.title('Saving')
-plt.xlabel("Files")
-plt.ylabel("Scores")
-plt.subplot(1, 4, 2)
-plt.bar(res['file'].values, res['load_time'].values)
-plt.title('Loading')
-plt.xlabel("Files")
-plt.ylabel("Scores")
-plt.subplot(1, 4, 3)
-plt.bar(res['file'].values, res['size'].values)
-plt.title('Size')
-plt.xlabel("Files")
-plt.ylabel("Scores")
-plt.subplot(1, 4, 4)
-plt.bar(res.sort_values('sum')['file'].values, res.sort_values('sum')['sum'].values)
-plt.title('final rank')
-plt.xlabel("Files")
-plt.ylabel("Scores")
-plt.savefig('results/res1.png')
+for i in range(1, 6) :
+  plt.subplot(2, 3, i)
+  plt.bar(res['file'].values, res[res.columns[i-1]].values)
+  plt.title(res.columns[i-1])
+  plt.xlabel("Files")
+  plt.ylabel("Scores")
 
-res = res.sort_values(by='sum')
-fig = plt.figure(figsize=(10,7))
+plt.savefig('results/features.png')
+
+fig = plt.figure(figsize=(15,7))
 x = np.arange(7)
-width = 0.2
+width = 0.1
 plt.bar(x-0.2, res['save_time'].values, width, color='cyan')
-plt.bar(x, res['load_time'].values, width, color='orange')
-plt.bar(x+0.2, res['size'].values, width, color='green')
+plt.bar(x-0.1, res['load_time'].values, width, color='orange')
+plt.bar(x, res['save_memory'].values, width, color='green')
+plt.bar(x+0.1, res['load_memory'].values, width, color='brown')
+plt.bar(x+0.2, res['size'].values, width, color='slateblue')
 plt.xticks(x, res['file'].values)
 plt.xlabel("Files")
 plt.ylabel("Scores")
 plt.title('Results sorted by final rank')
-plt.legend(["Saving", "Loading", "Size"])
-plt.savefig('results/res2.png')
+plt.legend(["Saving time", "Loading time", "Saving memory", "Loading memory", "Size"])
+plt.savefig('results/all features.png')
+
+fig = plt.figure(figsize=(10,7))
+plt.bar(res['file'].values, res['sum'].values)
+plt.title("Result")
+plt.xlabel("Files")
+plt.ylabel("Scores")
+
+plt.savefig('results/result.png')
