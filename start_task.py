@@ -16,6 +16,7 @@ import numpy as np
 import random
 import string
 from datetime import datetime
+import time
 import os
 from matplotlib import pyplot as plt
 import h5py
@@ -24,65 +25,82 @@ import datatable as dt
 import msgpack
 import memory_profiler
 from sklearn import preprocessing
+import distutils
 warnings.simplefilter(action='ignore', category=FutureWarning)
+from tables import NaturalNameWarning
+warnings.filterwarnings('ignore', category=NaturalNameWarning)
 
-types = ['int', 'float', 'string', 'boolean']
+os.mkdir("results")
 
-def int_column(length) :
+types = ['int', 'float', 'string', 'boolean', 'datetime64[ns]']
+num_iterations = 10
 
-    column = []
-    for i in range(length) :
-        column.append(random.randint(-2147483648, 2147483647))
-    return column
-
-def float_column(length) :
-    column = []
-    for i in range(length) :
-        column.append(random.uniform(-100, 100))
-    return column
-
-def boolean_column(length) :
-    column = []
-    for i in range(length) :
-        column.append(bool(random.randint(0,1)))
-    return column
-
-def string_column(length) :
-    column = []
-    letters = string.ascii_lowercase
-    for i in range(length) :
-        column.append(''.join([random.choice(letters) for j in range(random.randint(0,10))]))
-    return column
+"""Генерация колонок"""
 
 def column(column_type, length) :
-    if types[column_type] == 'int' :
-        return int_column(length)
-    elif types[column_type] == 'float':
-        return float_column(length)
-    elif types[column_type] == 'boolean' :
-        return boolean_column(length)
-    elif types[column_type] == 'string' :
-        return string_column(length)
+  if types[column_type] == 'int' :
+    return int_column(length)
+  elif types[column_type] == 'float':
+    return float_column(length)
+  elif types[column_type] == 'boolean' :
+    return boolean_column(length)
+  elif types[column_type] == 'string' :
+    return string_column(length)
+  elif types[column_type] == 'datetime64[ns]' :
+    return date_column(length)
 
+def int_column(length) :
+  column = []
+  for i in range(length) :
+    column.append(random.randint(-2147483648, 2147483647))
+  return column
+
+def float_column(length) :
+  column = []
+  for i in range(length) :
+    column.append(random.uniform(-100, 100))
+  return column
+
+def boolean_column(length) :
+  column = []
+  for i in range(length) :
+    column.append(bool(random.randint(0,1)))
+  return column
+
+def string_column(length) :
+  column = []
+  letters = string.ascii_lowercase
+  for i in range(length) :
+    column.append(''.join([random.choice(letters) for j in range(random.randint(0,10))]))
+  return column
+
+def date_column(length) :
+  column = []
+  for i in range(length) :
+    column.append(datetime.fromtimestamp(random.randint(0, round(time.time()))).strftime("%Y-%m-%d"))
+  return column
+
+"""Функции записи и чтения файлов"""
+
+def read_csv(filename):
+  ds = pd.read_csv(filename)
+  return(to_correct_date(ds))
+  
 def write_hdf(filename, ds) :
-    ds = pd.concat([pd.DataFrame(ds.columns), ds], axis=1)
-    new_ds = pd.DataFrame([ds[i].astype('string') for i in ds.columns])
-    with h5py.File(filename, 'w') as f:
-        f.create_dataset('dataset', data=new_ds.values)
+  for i in range(len(ds.columns)) :
+    if (ds.dtypes[i] == 'boolean') | ((ds.dtypes[i] == 'string')  | (ds.dtypes[i] == 'datetime64[ns]')) :
+      ds[ds.columns[i]] = ds[ds.columns[i]].astype(str)#.convert_objects()#.astype(object)
+      h = 0
+  ds.to_hdf(filename, key='ds', format='table', data_columns=True)
 
 def read_hdf(filename) :
-  with h5py.File(filename, "r") as f:
-        a_group_key = list(f.keys())[0]
-        readed_ds = h5py.Dataset.asstr(f[a_group_key])
-        ds = pd.DataFrame(list(readed_ds[1:]))
-        ds = ds.T
-        ds.columns = list(readed_ds[0])
-        return to_correct_types(ds)
+  ds = pd.read_hdf(filename)
+  return to_correct_types(ds)
 
 def write_jay(filename, ds) :
   ddt = dt.Frame([i.astype(str) for i in ds.values])
   ddt.names = list(ds.columns)
-  ddt.to_jay('results/dataset.jay', method='auto')
+  ddt.to_jay(filename, method='auto')
 
 def read_jay(filename) :
   ddt = dt.fread(filename)
@@ -95,20 +113,27 @@ def read_jay(filename) :
   return to_correct_types(ds)
 
 def write_msgpack(filename, ds) :
+
+  for i in range(len(ds.columns)) :
+    if ds.dtypes[i] == 'datetime64[ns]' :
+      ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
+
   with open(filename, "wb") as outfile:
     packed = msgpack.packb(ds.to_dict())
     outfile.write(packed)
 
 def read_msgpack(filename) :
-  with open('results/dataset.msg', "rb") as data_file:
+  with open(filename, "rb") as data_file:
     byte_data = data_file.read()
     data_loaded = msgpack.unpackb(byte_data, strict_map_key=False)
-    return pd.DataFrame(data_loaded)
+    return to_correct_date(pd.DataFrame(data_loaded))
+
+"""Приведение данных к корректным типам после чтения"""
 
 def to_correct_types(ds) :
   for i in range(len(ds.columns)) :
     try :
-      ds[ds.columns[i]] = ds[ds.columns[i]].astype('boolean')
+      ds[ds.columns[i]] = [eval(i) for i in ds[ds.columns[i]]]
     except :
       try :
         ds[ds.columns[i]] = ds[ds.columns[i]].astype('int')
@@ -116,171 +141,282 @@ def to_correct_types(ds) :
         try :
           ds[ds.columns[i]] = ds[ds.columns[i]].astype('float64')
         except :
-          ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
+          try:
+            ds[ds.columns[i]] = ds[ds.columns[i]].astype('datetime64[ns]')
+          except:
+            ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
   return ds
 
-def saving(ds) :
-    before_csv = memory_profiler.memory_usage()[0]
-    start_csv = datetime.now()
-    ds.to_csv('results/dataset.csv', index=False)
+def to_correct_date(ds) :
+  for i in range(len(ds.columns)) :
+    if ds.dtypes[i] == 'object' :
+      try:
+        ds[ds.columns[i]] = ds[ds.columns[i]].astype('datetime64[ns]')
+      except:
+        ds[ds.columns[i]] = ds[ds.columns[i]].astype('string')
+  return ds
 
-    before_feather = memory_profiler.memory_usage()[0]
-    start_feather = datetime.now()
-    ds.reset_index(drop=True).to_feather('results/dataset.feather')
+"""Запись файлов"""
 
-    before_hdf = memory_profiler.memory_usage()[0]
-    start_hdf = datetime.now()
-    write_hdf('results/dataset.hdf5', ds)
+def saving(ds, name) :
+  before_csv = memory_profiler.memory_usage()[0]
+  start_csv = datetime.now()
+  ds.to_csv('results/' + name + '.csv', index=False)
 
-    before_msgpack = memory_profiler.memory_usage()[0]
-    start_msgpack = datetime.now()
-    write_msgpack('results/dataset.msg', ds)
+  before_feather = memory_profiler.memory_usage()[0]
+  start_feather = datetime.now()
+  ds.reset_index(drop=True).to_feather('results/' + name + '.feather')
 
-    before_parquet = memory_profiler.memory_usage()[0]
-    start_parquet = datetime.now()
-    ds.to_parquet('results/dataset.gzip', compression='gzip')
+  dss = ds.copy()
+  before_hdf = memory_profiler.memory_usage()[0]
+  start_hdf = datetime.now()
+  write_hdf('results/' + name + '.hdf5', dss)
 
-    before_pickle = memory_profiler.memory_usage()[0]
-    start_pickle = datetime.now()
-    ds.to_pickle('results/dataset.pkl')
+  dss = ds.copy()
+  before_msgpack = memory_profiler.memory_usage()[0]
+  start_msgpack = datetime.now()
+  write_msgpack('results/' + name + '.msg', dss)
 
-    before_jay = memory_profiler.memory_usage()[0]
-    start_jay = datetime.now()
-    write_jay('results/dataset.jay', ds)
+  before_parquet = memory_profiler.memory_usage()[0]
+  start_parquet = datetime.now()
+  ds.to_parquet('results/' + name + '.gzip', compression='gzip')
 
-    after = memory_profiler.memory_usage()[0]
-    end_time = datetime.now()
+  before_pickle = memory_profiler.memory_usage()[0]
+  start_pickle = datetime.now()
+  ds.to_pickle('results/' + name + '.pkl')
 
+  dss = ds.copy()
+  before_jay = memory_profiler.memory_usage()[0]
+  start_jay = datetime.now()
+  write_jay('results/' + name + '.jay', dss)
 
-    result = pd.DataFrame()
-    result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
-    result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                           (end_time - start_jay).microseconds]
-    result['save_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
-                             abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
-                             abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
-                             abs(after - before_jay)]
-    return result
-
-def loading(ds, result) :
-    before_csv = memory_profiler.memory_usage()[0]
-    start_csv = datetime.now()
-    ds = pd.read_csv('results/dataset.csv')
-
-    before_feather = memory_profiler.memory_usage()[0]
-    start_feather = datetime.now()
-    ds = pd.read_feather('results/dataset.feather')
-
-    before_hdf = memory_profiler.memory_usage()[0]
-    start_hdf = datetime.now()
-    ds = read_hdf('results/dataset.hdf5')
-
-    before_msgpack = memory_profiler.memory_usage()[0]
-    start_msgpack = datetime.now()
-    ds = read_msgpack('results/dataset.msg')
-
-    before_parquet = memory_profiler.memory_usage()[0]
-    start_parquet = datetime.now()
-    ds = pd.read_parquet('results/dataset.gzip')
-
-    before_pickle = memory_profiler.memory_usage()[0]
-    start_pickle = datetime.now()
-    ds = pd.read_pickle('results/dataset.pkl')
-
-    before_jay = memory_profiler.memory_usage()[0]
-    start_jay = datetime.now()
-    ds = read_jay('results/dataset.jay')
-
-    after = memory_profiler.memory_usage()[0]
-    end_time = datetime.now()
-
-    result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
-                           (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
-                           (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
-                           (end_time - start_jay).microseconds]
-
-    result['load_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
-                             abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
-                             abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
-                             abs(after - before_jay)]
-    return result
-
-def main() :
-    #columns_num = random.randint(1, 100)
-    #rows_num = random.randint(1, 100)
-    #dim = columns_num * rows_num
-
-    ds = pd.DataFrame()
-    columns_num = 256
-    rows_num = 256
-
-    for i in range(columns_num) :
-        type = random.randint(0, 3)
-        ds = pd.concat([ds, pd.DataFrame(column(type, rows_num), columns=['col' + str(i) + "_" + types[type]])], axis=1)
-        ds.iloc[:, -1] = ds.iloc[:, -1].astype(types[type])
-
-    result = saving(ds)
+  after = memory_profiler.memory_usage()[0]
+  end_time = datetime.now()
 
 
-    result['size'] = [os.stat('results/dataset.csv').st_size, os.stat('results/dataset.feather').st_size,
-                      os.stat('results/dataset.hdf5').st_size, os.stat('results/dataset.msg').st_size,
-                      os.stat('results/dataset.gzip').st_size, os.stat('results/dataset.pkl').st_size, os.stat('results/dataset.jay').st_size]
-    
+  result = pd.DataFrame()
+  result['file'] = ['csv', 'feather', 'hdf', 'msgpack', 'parquet', 'pickle', 'jay']
+  result['save_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                        (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                        (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                        (end_time - start_jay).microseconds]
+  result['save_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
+                          abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
+                          abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
+                          abs(after - before_jay)]
+  return result
 
-    result = loading(ds, result)
-    
-    return result
+"""Чтение файлов"""
 
-result = pd.DataFrame(columns=['file', 'save_time', 'save_memory', 'load_time', 'load_memory', 'size'])
-for i in range(100) :
-        result = pd.concat([result, main()])
+def loading(ds, result, name) :
+  before_csv = memory_profiler.memory_usage()[0]
+  start_csv = datetime.now()
+  ds = pd.read_csv('results/' + name + '.csv')
 
-res = pd.concat([result[['file', 'save_time', 'load_time', 'size']].groupby('file', as_index=False).mean(), result[['file', 'save_memory', 'load_memory']].groupby('file', as_index=False).mean()], axis=1)
-files = res['file']
-res = res.drop(res.columns[0], axis=1)
+  before_feather = memory_profiler.memory_usage()[0]
+  start_feather = datetime.now()
+  ds = pd.read_feather('results/' + name + '.feather')
 
-for i in range(len(res.columns)) :
-  try:
-    res[res.columns[i]] = preprocessing.normalize(res[res.columns[i]].values.reshape(1, -1))[0]
-  except :
-    's' 
+  before_hdf = memory_profiler.memory_usage()[0]
+  start_hdf = datetime.now()
+  ds = read_hdf('results/' + name + '.hdf5')
 
-res['sum'] = res['save_time'] + res['load_time'] + res['size'] + res['save_memory'] + res['load_memory']
-res['file'] = files.iloc[:,0]
-res = res.sort_values(by='sum')
-print(res)
+  before_msgpack = memory_profiler.memory_usage()[0]
+  start_msgpack = datetime.now()
+  ds = read_msgpack('results/' + name + '.msg')
 
-fig = plt.figure(figsize=(24,11))
-for i in range(1, 6) :
-  plt.subplot(2, 3, i)
-  plt.bar(res['file'].values, res[res.columns[i-1]].values)
-  plt.title(res.columns[i-1])
+  before_parquet = memory_profiler.memory_usage()[0]
+  start_parquet = datetime.now()
+  ds = pd.read_parquet('results/' + name + '.gzip')
+
+  before_pickle = memory_profiler.memory_usage()[0]
+  start_pickle = datetime.now()
+  ds = pd.read_pickle('results/' + name + '.pkl')
+
+  before_jay = memory_profiler.memory_usage()[0]
+  start_jay = datetime.now()
+  ds = read_jay('results/' + name + '.jay')
+
+  after = memory_profiler.memory_usage()[0]
+  end_time = datetime.now()
+
+  result['load_time'] = [(start_feather - start_csv).microseconds, (start_hdf - start_feather).microseconds,
+                        (start_msgpack - start_hdf).microseconds, (start_parquet - start_msgpack).microseconds,
+                        (start_pickle - start_parquet).microseconds, (start_jay - start_pickle).microseconds,
+                        (end_time - start_jay).microseconds]
+
+  result['load_memory'] = [abs(before_feather - before_csv), abs(before_hdf - before_feather),
+                          abs(before_msgpack - before_hdf), abs(before_parquet - before_msgpack),
+                          abs(before_pickle - before_parquet), abs(before_jay - before_pickle),
+                          abs(after - before_jay)]
+  return result
+
+"""Генерация датасета"""
+
+def generate_dataset(types) :
+  ds = pd.DataFrame()
+  columns_num = 256
+  rows_num = 256
+
+  for i in range(columns_num) :
+    type_ = random.randint(0, len(types)-1)
+    ds = pd.concat([ds, pd.DataFrame(column(type_, rows_num), columns=['col' + str(i) + "_" + types[type_]])], axis=1)
+    ds.iloc[:, -1] = ds.iloc[:, -1].astype(types[type_])
+    if types[type_] == 'datetime64[ns]' :
+      ds[ds.columns[i]] = ds[ds.columns[i]].dt.tz_localize(None)
+  return ds
+
+"""Результаты по одной итерации"""
+
+def iteration_result(name, types) :
+  ds = generate_dataset(types)
+  result = saving(ds, name)
+  result['size'] = [os.stat('results/' + name + '.csv').st_size, os.stat('results/' + name + '.feather').st_size,
+                   os.stat('results/' + name + '.hdf5').st_size, os.stat('results/' + name + '.msg').st_size,
+                   os.stat('results/' + name + '.gzip').st_size, os.stat('results/' + name + '.pkl').st_size, os.stat('results/' + name + '.jay').st_size]   
+  result = loading(ds, result, name)
+  return result
+
+"""Средние результаты по всем итерациям"""
+
+def final_result(name, types) :
+  result = pd.DataFrame(columns=['file', 'save_time', 'save_memory', 'load_time', 'load_memory', 'size'])
+  for i in range(num_iterations) :
+     result = pd.concat([result, iteration_result(name, types)])
+     print(str(i) + ' iteration finished')
+
+  res = pd.concat([result[['file', 'save_time', 'load_time', 'size']].groupby('file', as_index=False).mean(), result[['file', 'save_memory', 'load_memory']].groupby('file', as_index=False).mean()], axis=1)
+  files = res['file']
+  res = res.drop(res.columns[0], axis=1)
+
+  for i in range(len(res.columns)) :
+    try:
+      res[res.columns[i]] = preprocessing.normalize(res[res.columns[i]].values.reshape(1, -1))[0]
+    except :
+      's' 
+
+  res['sum'] = res['save_time'] + res['load_time'] + res['size'] + res['save_memory'] + res['load_memory']
+  res['file'] = files.iloc[:,0]
+  res = res.sort_values(by='sum')
+  #print(res)
+  return res
+
+def features(res, name) :
+  fig = plt.figure(figsize=(24,11))
+  for i in range(1, 6) :
+    plt.subplot(2, 3, i)
+    plt.bar(res['file'].values, res[res.columns[i-1]].values)
+    plt.title(res.columns[i-1])
+    plt.xlabel("Files")
+    plt.ylabel("Scores")
+
+  plt.savefig('results/features_' + name + '.png')
+
+def all_features(res, name) :
+  fig = plt.figure(figsize=(15,7))
+  x = np.arange(7)
+  width = 0.1
+  plt.bar(x-0.2, res['save_time'].values, width, color='cyan')
+  plt.bar(x-0.1, res['load_time'].values, width, color='orange')
+  plt.bar(x, res['save_memory'].values, width, color='green')
+  plt.bar(x+0.1, res['load_memory'].values, width, color='brown')
+  plt.bar(x+0.2, res['size'].values, width, color='slateblue')
+  plt.xticks(x, res['file'].values)
+  plt.xlabel("Files")
+  plt.ylabel("Scores")
+  plt.title('Results sorted by final rank')
+  plt.legend(["Saving time", "Loading time", "Saving memory", "Loading memory", "Size"])
+  plt.savefig('results/all features_' + name + '.png')
+
+def result_graph(res, name) :
+  fig = plt.figure(figsize=(10,7))
+  plt.bar(res['file'].values, res['sum'].values)
+  plt.title("Result")
   plt.xlabel("Files")
   plt.ylabel("Scores")
 
-plt.savefig('results/features.png')
+  plt.savefig('results/result_' + name + '.png')
 
-fig = plt.figure(figsize=(15,7))
-x = np.arange(7)
-width = 0.1
-plt.bar(x-0.2, res['save_time'].values, width, color='cyan')
-plt.bar(x-0.1, res['load_time'].values, width, color='orange')
-plt.bar(x, res['save_memory'].values, width, color='green')
-plt.bar(x+0.1, res['load_memory'].values, width, color='brown')
-plt.bar(x+0.2, res['size'].values, width, color='slateblue')
-plt.xticks(x, res['file'].values)
-plt.xlabel("Files")
-plt.ylabel("Scores")
-plt.title('Results sorted by final rank')
-plt.legend(["Saving time", "Loading time", "Saving memory", "Loading memory", "Size"])
-plt.savefig('results/all features.png')
+"""<h1>Данные разных типов</h1>"""
 
-fig = plt.figure(figsize=(10,7))
-plt.bar(res['file'].values, res['sum'].values)
-plt.title("Result")
-plt.xlabel("Files")
-plt.ylabel("Scores")
+res = final_result('dataset', types)
+res
 
-plt.savefig('results/result.png')
+features(res, 'different types')
+
+all_features(res, 'different types')
+
+result_graph(res, 'different types')
+
+"""<h1>Числовые данные</h1>"""
+
+res = final_result('numbers', ['int', 'float'])
+res
+
+features(res, 'numbers')
+
+all_features(res, 'numbers')
+
+result_graph(res, 'numbers')
+
+"""<h1>boolean, string, datetime</h1>"""
+
+res = final_result('not_numbers', ['string', 'boolean', 'datetime64[ns]'])
+res
+
+features(res, 'not_numbers')
+
+all_features(res, 'not_numbers')
+
+result_graph(res, 'not_numbers')
+
+"""<h1></h1>"""
+
+dss = generate_dataset(types)
+
+dss.dtypes
+
+write_hdf('hello', dss)
+
+d = read_hdf('hello')
+
+dss
+
+dss.to_hdf('hhh.h5', key='ds')
+
+pd.read_hdf('hhh.h5')
+
+ds = dss.copy()
+ds.to_csv('results/dataset.csv', index=False)
+ds = read_csv('results/dataset.csv')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+ds.reset_index(drop=True).to_feather('results/dataset.feather')
+ds = pd.read_feather('results/dataset.feather')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+write_hdf('results/dataset.hdf5', ds)
+ds = read_hdf('results/dataset.hdf5')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+write_msgpack('results/dataset.msg', ds)
+ds = read_msgpack('results/dataset.msg')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+ds.to_parquet('results/dataset.gzip', compression='gzip')
+ds = pd.read_parquet('results/dataset.gzip')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+ds.to_pickle('results/dataset.pkl')
+ds = pd.read_pickle('results/dataset.pkl')
+print(ds.dtypes[246])
+
+ds = dss.copy()
+write_jay('results/dataset.jay', ds)
+ds = read_jay('results/dataset.jay')
+print(ds.dtypes[246])
