@@ -301,10 +301,13 @@ def final_result(name, types) :
   #print(res)
   return res
 
+"""Визуализация"""
+
 def features(res, name) :
   fig = plt.figure(figsize=(24,11))
   for i in range(1, 6) :
     plt.subplot(2, 3, i)
+    res = res.sort_values(by=res.columns[i-1])
     plt.bar(res['file'].values, res[res.columns[i-1]].values)
     plt.title(res.columns[i-1])
     plt.xlabel("Files")
@@ -359,7 +362,7 @@ all_features(res, 'numbers')
 
 result_graph(res, 'numbers')
 
-"""<h1>boolean, string, datetime</h1>"""
+"""<h1>Данные нечисловых типов</h1>"""
 
 res = final_result('not_numbers', ['string', 'boolean', 'datetime64[ns]'])
 res
@@ -369,54 +372,3 @@ features(res, 'not_numbers')
 all_features(res, 'not_numbers')
 
 result_graph(res, 'not_numbers')
-
-"""<h1></h1>"""
-
-dss = generate_dataset(types)
-
-dss.dtypes
-
-write_hdf('hello', dss)
-
-d = read_hdf('hello')
-
-dss
-
-dss.to_hdf('hhh.h5', key='ds')
-
-pd.read_hdf('hhh.h5')
-
-ds = dss.copy()
-ds.to_csv('results/dataset.csv', index=False)
-ds = read_csv('results/dataset.csv')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-ds.reset_index(drop=True).to_feather('results/dataset.feather')
-ds = pd.read_feather('results/dataset.feather')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-write_hdf('results/dataset.hdf5', ds)
-ds = read_hdf('results/dataset.hdf5')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-write_msgpack('results/dataset.msg', ds)
-ds = read_msgpack('results/dataset.msg')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-ds.to_parquet('results/dataset.gzip', compression='gzip')
-ds = pd.read_parquet('results/dataset.gzip')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-ds.to_pickle('results/dataset.pkl')
-ds = pd.read_pickle('results/dataset.pkl')
-print(ds.dtypes[246])
-
-ds = dss.copy()
-write_jay('results/dataset.jay', ds)
-ds = read_jay('results/dataset.jay')
-print(ds.dtypes[246])
